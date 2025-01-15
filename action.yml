@@ -1,0 +1,115 @@
+name: "PR Reviewer Action"
+description: "A reusable action that reviews a PR (deduced from GITHUB_REF) and comments with its findings. For workflow_dispatch only."
+
+inputs:
+  github_token:
+    description: "GitHub token for authentication"
+    required: true
+  openai_token:
+    description: "OpenAI token for authentication"
+    required: true
+  openai_model:
+    description: "OpenAI model to use for analysis"
+    required: false
+    default: "gpt-4o-mini"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: '0'
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.x"
+
+    - name: Install Python dependencies
+      shell: bash
+      run: |
+        pip install openai==1.59.7
+
+    - name: Fetch and diff with main
+      shell: bash
+      run: |
+        git fetch origin main
+        git diff --inter-hunk-context=1000 origin/main...HEAD > diff.txt
+
+    - name: Get GPT feedback
+      shell: bash
+      run: |
+        python .github/actions/gpt-review/gpt_review.py diff.txt feedback.txt "${{ inputs.openai_token }}" "${{ inputs.openai_model }}"
+
+    - name: Post or update PR comment
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          // 1. Grab the GITHUB_REF environment variable
+          const ref = process.env.GITHUB_REF; // e.g., "refs/heads/feature/my-branch"
+          if (!ref) {
+            throw new Error("GITHUB_REF is not defined. Ensure this is triggered from a branch.");
+          }
+
+          // 2. Validate we have a branch ref
+          if (!ref.startsWith("refs/heads/")) {
+            throw new Error(`Not a valid branch reference: ${ref}`);
+          }
+
+          // 3. Extract the branch name
+          const branch = ref.replace("refs/heads/", "");
+
+          // 4. Attempt to find an open PR for this branch
+          const prList = await github.rest.pulls.list({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            head: `${context.repo.owner}:${branch}`,
+            state: 'open'
+          });
+
+          if (!prList.data || prList.data.length === 0) {
+            throw new Error(`No open PR found for branch '${branch}'. Exiting...`);
+          }
+
+          // 5. Pick the first matching PR
+          const prNumber = prList.data[0].number;
+
+          // 6. Read GPT feedback from file
+          const fs = require('fs');
+          const feedback = fs.readFileSync('feedback.txt', 'utf8');
+
+          // 7. Check if there's an existing bot comment
+          const existingComments = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: prNumber
+          });
+
+          const botComment = existingComments.data.find(
+            (comment) =>
+              comment.user.login === 'github-actions[bot]' &&
+              comment.body.includes('<!-- GPT-BOT-COMMENT -->')
+          );
+
+          // 8. Prepare comment body with a marker
+          const newBody = `<!-- GPT-BOT-COMMENT -->
+          ${feedback}`;
+
+          // 9. Update or create
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: newBody
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: newBody
+            });
+          }
