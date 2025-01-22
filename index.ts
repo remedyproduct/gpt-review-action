@@ -1,15 +1,15 @@
-const core = require('@actions/core');
-const github = require('@actions/github');
-const { exec } = require('child_process');
-const { Configuration, OpenAIApi } = require('openai');
-const util = require('util');
+import * as core from '@actions/core';
+import * as github from '@actions/github';
+import {exec} from 'child_process';
+import OpenAI from 'openai';
+import {promisify} from 'util';
 
-const execAsync = util.promisify(exec);
+const execAsync = promisify(exec);
 
 /**
  * Fetch the latest code from main branch.
  */
-async function fetchMainBranch() {
+async function fetchMainBranch(): Promise<void> {
   core.info('Fetching latest code from main...');
   await execAsync('git fetch origin main');
 }
@@ -18,9 +18,9 @@ async function fetchMainBranch() {
  * Generate a diff between the main branch and the current HEAD.
  * Includes extended context to help with AI-based review.
  *
- * @returns {Promise<string>} The diff content.
+ * @returns The diff content (string).
  */
-async function generateDiff() {
+async function generateDiff(): Promise<string> {
   core.info('Generating diff...');
   const { stdout, stderr } = await execAsync('git diff --inter-hunk-context=1000 origin/main...HEAD');
   if (stderr) {
@@ -30,46 +30,53 @@ async function generateDiff() {
 }
 
 /**
- * Create and return an OpenAI client instance.
+ * Create and return an OpenAI client instance (v4 syntax).
  *
- * @param {string} openaiToken - The OpenAI API token.
- * @returns {OpenAIApi} An instance of OpenAIApi.
+ * @param openaiToken - The OpenAI API token.
+ * @returns An instance of the new OpenAI client.
  */
-function createOpenAIClient(openaiToken) {
-  const configuration = new Configuration({ apiKey: openaiToken });
-  return new OpenAIApi(configuration);
+function createOpenAIClient(openaiToken: string): OpenAI {
+  // apiKey can be omitted if the env var is already set, but included here for clarity
+  return new OpenAI({ apiKey: openaiToken });
 }
 
 /**
  * Generate feedback using OpenAI, given a diff and a model name.
  *
- * @param {OpenAIApi} openai - The OpenAI client.
- * @param {string} model - The OpenAI model (e.g., 'gpt-3.5-turbo').
- * @param {string} diff - The diff content to analyze.
- * @returns {Promise<string>} AI-generated feedback.
+ * @param openai - The OpenAI client (v4).
+ * @param model - The OpenAI model (e.g., 'gpt-3.5-turbo').
+ * @param diff - The diff content to analyze.
+ * @returns AI-generated feedback (string).
  */
-async function generateFeedback(openai, model, diff) {
+async function generateFeedback(openai: OpenAI, model: string, diff: string): Promise<string> {
   core.info('Generating feedback from OpenAI...');
 
+  // The prompt is passed via messages in a chat-style request
   const userPrompt = `Check this PR code, find logic issues not easily found by static analysis tools, order them by severity.\n\nPlease review the following diff:\n${diff}\n`;
 
-  const response = await openai.createChatCompletion({
+  // New usage: openai.chat.completions.create(...)
+  const chatCompletion = await openai.chat.completions.create({
     model,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
-  return response.data.choices[0].message.content.trim();
+  // Extract the message text from the first choice
+  return chatCompletion.choices[0].message?.content?.trim() || '';
 }
 
 /**
  * Find an open PR corresponding to a given branch.
  *
- * @param {ReturnType<typeof github.getOctokit>} octokit - The authenticated GitHub client.
- * @param {string} branch - The branch name to find a PR for.
- * @returns {Promise<number|null>} The PR number if found, otherwise null.
+ * @param octokit - The authenticated GitHub client.
+ * @param branch - The branch name to find a PR for.
+ * @returns The PR number if found, otherwise null.
  */
-async function findOpenPullRequest(octokit, branch) {
+async function findOpenPullRequest(
+  octokit: ReturnType<typeof github.getOctokit>,
+  branch: string
+): Promise<number | null> {
   core.info(`Searching for open PR for branch '${branch}'...`);
+
   const { data: pullRequests } = await octokit.rest.pulls.list({
     owner: github.context.repo.owner,
     repo: github.context.repo.repo,
@@ -88,34 +95,50 @@ async function findOpenPullRequest(octokit, branch) {
 }
 
 /**
+ * Minimal interface for a GitHub comment retrieved via octokit.
+ */
+interface GitHubComment {
+  id: number;
+  body?: string | undefined;
+}
+/**
  * Find an existing bot comment marked with `<!-- GPT-BOT-COMMENT -->` in a given PR.
  *
- * @param {ReturnType<typeof github.getOctokit>} octokit - The authenticated GitHub client.
- * @param {number} prNumber - The pull request number.
- * @returns {Promise<object|null>} The existing comment object if found, otherwise null.
+ * @param octokit - The authenticated GitHub client.
+ * @param prNumber - The pull request number.
+ * @returns The existing comment object if found, otherwise null.
  */
-async function findExistingBotComment(octokit, prNumber) {
+async function findExistingBotComment(
+  octokit: ReturnType<typeof github.getOctokit>,
+  prNumber: number
+): Promise<GitHubComment | null> {
   const { data: comments } = await octokit.rest.issues.listComments({
     owner: github.context.repo.owner,
     repo: github.context.repo.repo,
     issue_number: prNumber,
   });
 
-  return comments.find(
-    (comment) =>
-      comment.user.type === 'Bot' && comment.body.includes('<!-- GPT-BOT-COMMENT -->')
+  // Use optional chaining to avoid errors if user/body are undefined
+  const botComment = comments.find((comment) =>
+    comment.user?.type === 'Bot' && comment.body?.includes('<!-- GPT-BOT-COMMENT -->')
   );
-}
 
+  return botComment || null;
+}
 /**
  * Update or create a comment in a PR with the AI-generated feedback.
  *
- * @param {ReturnType<typeof github.getOctokit>} octokit - The authenticated GitHub client.
- * @param {number} prNumber - The pull request number.
- * @param {object|null} botComment - The existing bot comment object if found.
- * @param {string} feedback - The AI-generated feedback content.
+ * @param octokit - The authenticated GitHub client.
+ * @param prNumber - The pull request number.
+ * @param botComment - The existing bot comment object if found.
+ * @param feedback - The AI-generated feedback content.
  */
-async function updateOrCreateBotComment(octokit, prNumber, botComment, feedback) {
+async function updateOrCreateBotComment(
+  octokit: ReturnType<typeof github.getOctokit>,
+  prNumber: number,
+  botComment: GitHubComment | null,
+  feedback: string
+): Promise<void> {
   const commentBody = `<!-- GPT-BOT-COMMENT -->\n${feedback}`;
 
   if (botComment) {
@@ -138,9 +161,9 @@ async function updateOrCreateBotComment(octokit, prNumber, botComment, feedback)
 }
 
 /**
- * Main function to orchestrate the entire process.
+ * Main function to orchestrate the entire process, with updated OpenAI v4 usage.
  */
-async function main() {
+async function main(): Promise<void> {
   try {
     // Retrieve inputs
     const githubToken = core.getInput('github_token', { required: true });
@@ -169,7 +192,7 @@ async function main() {
       return;
     }
 
-    // Generate AI feedback
+    // Generate AI feedback (using the new chat.completions.create method)
     const feedback = await generateFeedback(openai, openaiModel, diff);
 
     // Find the pull request
@@ -186,8 +209,18 @@ async function main() {
     await updateOrCreateBotComment(octokit, prNumber, botComment, feedback);
 
     core.info('Comment posted successfully.');
-  } catch (error) {
-    core.setFailed(`An error occurred: ${error.message}`);
+  } catch (error: unknown) {
+    // Updated error handling for OpenAI v4
+    if (error instanceof OpenAI.APIError) {
+      core.error(`OpenAI API Error: ${error.message}`);
+      core.error(`Status: ${error.status}`);
+      core.error(`Code: ${error.code}`);
+      core.error(`Type: ${error.type}`);
+    } else {
+      core.error(`Non-API error: ${(error as Error).message}`);
+    }
+
+    core.setFailed(`An error occurred: ${(error as Error).message}`);
   }
 }
 

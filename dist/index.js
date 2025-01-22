@@ -35631,6 +35631,225 @@ function wrappy (fn, cb) {
 
 /***/ }),
 
+/***/ 98:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+const core = __importStar(__nccwpck_require__(7484));
+const github = __importStar(__nccwpck_require__(3228));
+const child_process_1 = __nccwpck_require__(5317);
+const openai_1 = __importDefault(__nccwpck_require__(2583));
+const util_1 = __nccwpck_require__(9023);
+const execAsync = (0, util_1.promisify)(child_process_1.exec);
+/**
+ * Fetch the latest code from main branch.
+ */
+async function fetchMainBranch() {
+    core.info('Fetching latest code from main...');
+    await execAsync('git fetch origin main');
+}
+/**
+ * Generate a diff between the main branch and the current HEAD.
+ * Includes extended context to help with AI-based review.
+ *
+ * @returns The diff content (string).
+ */
+async function generateDiff() {
+    core.info('Generating diff...');
+    const { stdout, stderr } = await execAsync('git diff --inter-hunk-context=1000 origin/main...HEAD');
+    if (stderr) {
+        core.warning(`Standard error while generating diff: ${stderr}`);
+    }
+    return stdout;
+}
+/**
+ * Create and return an OpenAI client instance (v4 syntax).
+ *
+ * @param openaiToken - The OpenAI API token.
+ * @returns An instance of the new OpenAI client.
+ */
+function createOpenAIClient(openaiToken) {
+    // apiKey can be omitted if the env var is already set, but included here for clarity
+    return new openai_1.default({ apiKey: openaiToken });
+}
+/**
+ * Generate feedback using OpenAI, given a diff and a model name.
+ *
+ * @param openai - The OpenAI client (v4).
+ * @param model - The OpenAI model (e.g., 'gpt-3.5-turbo').
+ * @param diff - The diff content to analyze.
+ * @returns AI-generated feedback (string).
+ */
+async function generateFeedback(openai, model, diff) {
+    core.info('Generating feedback from OpenAI...');
+    // The prompt is passed via messages in a chat-style request
+    const userPrompt = `Check this PR code, find logic issues not easily found by static analysis tools, order them by severity.\n\nPlease review the following diff:\n${diff}\n`;
+    // New usage: openai.chat.completions.create(...)
+    const chatCompletion = await openai.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: userPrompt }],
+    });
+    // Extract the message text from the first choice
+    return chatCompletion.choices[0].message?.content?.trim() || '';
+}
+/**
+ * Find an open PR corresponding to a given branch.
+ *
+ * @param octokit - The authenticated GitHub client.
+ * @param branch - The branch name to find a PR for.
+ * @returns The PR number if found, otherwise null.
+ */
+async function findOpenPullRequest(octokit, branch) {
+    core.info(`Searching for open PR for branch '${branch}'...`);
+    const { data: pullRequests } = await octokit.rest.pulls.list({
+        owner: github.context.repo.owner,
+        repo: github.context.repo.repo,
+        head: `${github.context.repo.owner}:${branch}`,
+        state: 'open',
+    });
+    if (pullRequests.length === 0) {
+        core.warning(`No open PR found for branch '${branch}'.`);
+        return null;
+    }
+    const prNumber = pullRequests[0].number;
+    core.info(`Found PR #${prNumber}.`);
+    return prNumber;
+}
+/**
+ * Find an existing bot comment marked with `<!-- GPT-BOT-COMMENT -->` in a given PR.
+ *
+ * @param octokit - The authenticated GitHub client.
+ * @param prNumber - The pull request number.
+ * @returns The existing comment object if found, otherwise null.
+ */
+async function findExistingBotComment(octokit, prNumber) {
+    const { data: comments } = await octokit.rest.issues.listComments({
+        owner: github.context.repo.owner,
+        repo: github.context.repo.repo,
+        issue_number: prNumber,
+    });
+    // Use optional chaining to avoid errors if user/body are undefined
+    const botComment = comments.find((comment) => comment.user?.type === 'Bot' && comment.body?.includes('<!-- GPT-BOT-COMMENT -->'));
+    return botComment || null;
+}
+/**
+ * Update or create a comment in a PR with the AI-generated feedback.
+ *
+ * @param octokit - The authenticated GitHub client.
+ * @param prNumber - The pull request number.
+ * @param botComment - The existing bot comment object if found.
+ * @param feedback - The AI-generated feedback content.
+ */
+async function updateOrCreateBotComment(octokit, prNumber, botComment, feedback) {
+    const commentBody = `<!-- GPT-BOT-COMMENT -->\n${feedback}`;
+    if (botComment) {
+        core.info('Updating existing bot comment...');
+        await octokit.rest.issues.updateComment({
+            owner: github.context.repo.owner,
+            repo: github.context.repo.repo,
+            comment_id: botComment.id,
+            body: commentBody,
+        });
+    }
+    else {
+        core.info('Creating new bot comment...');
+        await octokit.rest.issues.createComment({
+            owner: github.context.repo.owner,
+            repo: github.context.repo.repo,
+            issue_number: prNumber,
+            body: commentBody,
+        });
+    }
+}
+/**
+ * Main function to orchestrate the entire process, with updated OpenAI v4 usage.
+ */
+async function main() {
+    try {
+        // Retrieve inputs
+        const githubToken = core.getInput('github_token', { required: true });
+        const openaiToken = core.getInput('openai_token', { required: true });
+        const openaiModel = core.getInput('openai_model') || 'gpt-3.5-turbo';
+        // Set up GitHub and OpenAI clients
+        const octokit = github.getOctokit(githubToken);
+        const openai = createOpenAIClient(openaiToken);
+        // Determine the current branch
+        const ref = github.context.ref; // e.g., "refs/heads/feature-branch"
+        if (!ref || !ref.startsWith('refs/heads/')) {
+            throw new Error(`GITHUB_REF is not a valid branch reference: ${ref}`);
+        }
+        const branch = ref.replace('refs/heads/', '');
+        // Fetch main branch and generate diff
+        await fetchMainBranch();
+        const diff = await generateDiff();
+        // If no diff, output a message and exit
+        if (!diff) {
+            core.setOutput('feedback', 'No differences found.');
+            core.info('No differences found between main and current branch.');
+            return;
+        }
+        // Generate AI feedback (using the new chat.completions.create method)
+        const feedback = await generateFeedback(openai, openaiModel, diff);
+        // Find the pull request
+        const prNumber = await findOpenPullRequest(octokit, branch);
+        if (!prNumber) {
+            core.warning('Cannot proceed without an open PR.');
+            return;
+        }
+        // Check for existing bot comment
+        const botComment = await findExistingBotComment(octokit, prNumber);
+        // Create or update the bot comment with the AI feedback
+        await updateOrCreateBotComment(octokit, prNumber, botComment, feedback);
+        core.info('Comment posted successfully.');
+    }
+    catch (error) {
+        // Updated error handling for OpenAI v4
+        if (error instanceof openai_1.default.APIError) {
+            core.error(`OpenAI API Error: ${error.message}`);
+            core.error(`Status: ${error.status}`);
+            core.error(`Code: ${error.code}`);
+            core.error(`Type: ${error.type}`);
+        }
+        else {
+            core.error(`Non-API error: ${error.message}`);
+        }
+        core.setFailed(`An error occurred: ${error.message}`);
+    }
+}
+// Execute the main function
+main();
+
+
+/***/ }),
+
 /***/ 2078:
 /***/ ((module) => {
 
@@ -45815,122 +46034,12 @@ module.exports = /*#__PURE__*/JSON.parse('[[[0,44],"disallowed_STD3_valid"],[[45
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
 /******/ 	
 /************************************************************************/
-var __webpack_exports__ = {};
-const core = __nccwpck_require__(7484);
-const github = __nccwpck_require__(3228);
-const { exec } = __nccwpck_require__(5317);
-const { Configuration, OpenAIApi } = __nccwpck_require__(2583);
-const util = __nccwpck_require__(9023);
-
-const execAsync = util.promisify(exec);
-
-async function main() {
-  try {
-    // Retrieve inputs
-    const githubToken = core.getInput('github_token', { required: true });
-    const openaiToken = core.getInput('openai_token', { required: true });
-    const openaiModel = core.getInput('openai_model') || 'gpt-3.5-turbo';
-
-    // Set up clients
-    const octokit = github.getOctokit(githubToken);
-    const configuration = new Configuration({
-      apiKey: openaiToken,
-    });
-    const openai = new OpenAIApi(configuration);
-
-    // Get the current branch
-    const ref = github.context.ref; // e.g., "refs/heads/feature-branch"
-    if (!ref || !ref.startsWith('refs/heads/')) {
-      throw new Error(`GITHUB_REF is not a valid branch reference: ${ref}`);
-    }
-    const branch = ref.replace('refs/heads/', '');
-
-    // Fetch main branch and generate diff
-    core.info('Fetching latest code from main...');
-    await execAsync('git fetch origin main');
-
-    core.info('Generating diff...');
-    const { stdout: diff, stderr } = await execAsync(`git diff --inter-hunk-context=1000 origin/main...HEAD`);
-
-    if (stderr) {
-      core.warning(`Standard error while generating diff: ${stderr}`);
-    }
-
-    if (!diff) {
-      core.setOutput('feedback', 'No differences found.');
-      core.info('No differences found between main and current branch.');
-      return;
-    }
-
-    // Prepare the prompt for OpenAI
-    core.info('Generating feedback from OpenAI...');
-    const userPrompt = `Check this PR code, find logic issues not easily found by static analysis tools, order them by severity.\n\nPlease review the following diff:\n${diff}\n`;
-
-    const response = await openai.createChatCompletion({
-      model: openaiModel,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
-
-    const feedback = response.data.choices[0].message.content.trim();
-
-    // Find the pull request
-    core.info(`Searching for open PR for branch '${branch}'...`);
-    const { data: pullRequests } = await octokit.rest.pulls.list({
-      owner: github.context.repo.owner,
-      repo: github.context.repo.repo,
-      head: `${github.context.repo.owner}:${branch}`,
-      state: 'open',
-    });
-
-    if (pullRequests.length === 0) {
-      core.warning(`No open PR found for branch '${branch}'. Exiting...`);
-      return;
-    }
-
-    const prNumber = pullRequests[0].number;
-    core.info(`Found PR #${prNumber}.`);
-
-    // Check for existing bot comment
-    const { data: comments } = await octokit.rest.issues.listComments({
-      owner: github.context.repo.owner,
-      repo: github.context.repo.repo,
-      issue_number: prNumber,
-    });
-
-    const botComment = comments.find(
-      (comment) =>
-        comment.user.type === 'Bot' && comment.body.includes('<!-- GPT-BOT-COMMENT -->')
-    );
-
-    const commentBody = `<!-- GPT-BOT-COMMENT -->\n${feedback}`;
-
-    if (botComment) {
-      // Update existing comment
-      core.info('Updating existing bot comment...');
-      await octokit.rest.issues.updateComment({
-        owner: github.context.repo.owner,
-        repo: github.context.repo.repo,
-        comment_id: botComment.id,
-        body: commentBody,
-      });
-    } else {
-      // Create new comment
-      core.info('Creating new bot comment...');
-      await octokit.rest.issues.createComment({
-        owner: github.context.repo.owner,
-        repo: github.context.repo.repo,
-        issue_number: prNumber,
-        body: commentBody,
-      });
-    }
-
-    core.info('Comment posted successfully.');
-  } catch (error) {
-    core.setFailed(`An error occurred: ${error.message}`);
-  }
-}
-
-main();
-module.exports = __webpack_exports__;
+/******/ 	
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	// This entry module is referenced by other modules so it can't be inlined
+/******/ 	var __webpack_exports__ = __nccwpck_require__(98);
+/******/ 	module.exports = __webpack_exports__;
+/******/ 	
 /******/ })()
 ;

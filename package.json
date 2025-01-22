@@ -4,7 +4,7 @@
   "description": "A GitHub Action that reviews PRs using OpenAI and posts feedback.",
   "main": "index.js",
   "scripts": {
-    "build": "ncc build index.js --license licenses.txt"
+    "build": "tsc && ncc build index.ts --license licenses.txt -o dist"
   },
   "author": "Your Name <your.email@example.com>",
   "license": "MIT",
@@ -14,6 +14,7 @@
     "openai": "^4.79.4"
   },
   "devDependencies": {
-    "@vercel/ncc": "^0.38.3"
+    "@vercel/ncc": "^0.38.3",
+    "typescript": "^4.9.5"
   }
 }
