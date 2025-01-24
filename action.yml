@@ -12,6 +12,9 @@ inputs:
     description: "OpenAI model to use for analysis"
     required: false
     default: "gpt-4o-mini"
+  extra_prompt:
+    required: false
+    default: ""
 
 runs:
   using: "node20"

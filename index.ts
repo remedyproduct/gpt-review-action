@@ -48,13 +48,11 @@ function createOpenAIClient(openaiToken: string): OpenAI {
  * @param diff - The diff content to analyze.
  * @returns AI-generated feedback (string).
  */
-async function generateFeedback(openai: OpenAI, model: string, diff: string): Promise<string> {
+async function generateFeedback(openai: OpenAI, model: string, diff: string, extraPrompt: string): Promise<string> {
   core.info('Generating feedback from OpenAI...');
 
-  // The prompt is passed via messages in a chat-style request
-  const userPrompt = `Check this PR code, find logic issues not easily found by static analysis tools, order them by severity.\n\nPlease review the following diff:\n${diff}\n`;
+  const userPrompt = `Check this PR code, find logic issues not easily found by static analysis tools, order them by severity.\n\nPlease review the following diff:\n${diff}\n\n${extraPrompt}`;
 
-  // New usage: openai.chat.completions.create(...)
   const chatCompletion = await openai.chat.completions.create({
     model,
     messages: [{ role: 'user', content: userPrompt }],
@@ -168,7 +166,8 @@ async function main(): Promise<void> {
     // Retrieve inputs
     const githubToken = core.getInput('github_token', { required: true });
     const openaiToken = core.getInput('openai_token', { required: true });
-    const openaiModel = core.getInput('openai_model') || 'gpt-3.5-turbo';
+    const openaiModel = core.getInput('openai_model') || 'gpt-4o-mini';
+    const extraPrompt = core.getInput('extra_prompt');
 
     // Set up GitHub and OpenAI clients
     const octokit = github.getOctokit(githubToken);
@@ -193,7 +192,7 @@ async function main(): Promise<void> {
     }
 
     // Generate AI feedback (using the new chat.completions.create method)
-    const feedback = await generateFeedback(openai, openaiModel, diff);
+    const feedback = await generateFeedback(openai, openaiModel, diff, extraPrompt);
 
     // Find the pull request
     const prNumber = await findOpenPullRequest(octokit, branch);
