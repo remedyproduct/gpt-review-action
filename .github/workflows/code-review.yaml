@@ -31,10 +31,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: '0'
+          fetch-depth: "0"
 
       - name: Run PR Reviewer Action
-        uses: remedyproduct/gpt-review-action@f089524c34c3fe648c2fae5969166a60193356db
+        uses: remedyproduct/gpt-review-action@ccdf1eae71a1fa00433bedd16a8286d721c59dc5
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           openai_token: ${{ secrets.OPENAI_TOKEN }}
