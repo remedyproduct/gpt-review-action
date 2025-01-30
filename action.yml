@@ -1,0 +1,21 @@
+name: "PR Reviewer Action"
+description: "A reusable action that reviews a PR (deduced from GITHUB_REF) and comments with its findings."
+
+inputs:
+  github_token:
+    description: "GitHub token for authentication"
+    required: true
+  openai_token:
+    description: "OpenAI token for authentication"
+    required: true
+  openai_model:
+    description: "OpenAI model to use for analysis"
+    required: false
+    default: "gpt-4o-mini"
+  extra_prompt:
+    required: false
+    default: ""
+
+runs:
+  using: "node20"
+  main: "dist/index.js"

@@ -1,0 +1,20 @@
+{
+  "name": "pr-reviewer-action",
+  "version": "1.0.0",
+  "description": "A GitHub Action that reviews PRs using OpenAI and posts feedback.",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc && ncc build index.ts --license licenses.txt -o dist"
+  },
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.10.0",
+    "@actions/github": "^6.0.0",
+    "openai": "^4.79.4"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.3",
+    "typescript": "^4.9.5"
+  }
+}
