@@ -35673,8 +35673,8 @@ const execAsync = (0, util_1.promisify)(child_process_1.exec);
  * Fetch the latest code from main branch.
  */
 async function fetchMainBranch() {
-    core.info("Fetching latest code from main...");
-    await execAsync("git fetch origin main");
+    core.info('Fetching latest code from main...');
+    await execAsync('git fetch origin main');
 }
 /**
  * Generate a diff between the main branch and the current HEAD.
@@ -35683,8 +35683,8 @@ async function fetchMainBranch() {
  * @returns The diff content (string).
  */
 async function generateDiff() {
-    core.info("Generating diff...");
-    const { stdout, stderr } = await execAsync("git diff --inter-hunk-context=1000 origin/main...HEAD", { maxBuffer: 1024 * 1024 * 10 });
+    core.info('Generating diff...');
+    const { stdout, stderr } = await execAsync('git diff --inter-hunk-context=1000 origin/main...HEAD');
     if (stderr) {
         core.warning(`Standard error while generating diff: ${stderr}`);
     }
@@ -35709,14 +35709,14 @@ function createOpenAIClient(openaiToken) {
  * @returns AI-generated feedback (string).
  */
 async function generateFeedback(openai, model, diff, extraPrompt) {
-    core.info("Generating feedback from OpenAI...");
+    core.info('Generating feedback from OpenAI...');
     const userPrompt = `Check this PR code, find logic issues not easily found by static analysis tools, order them by severity.\n\nPlease review the following diff:\n${diff}\n\n${extraPrompt}`;
     const chatCompletion = await openai.chat.completions.create({
         model,
-        messages: [{ role: "user", content: userPrompt }],
+        messages: [{ role: 'user', content: userPrompt }],
     });
     // Extract the message text from the first choice
-    return chatCompletion.choices[0].message?.content?.trim() || "";
+    return chatCompletion.choices[0].message?.content?.trim() || '';
 }
 /**
  * Find an open PR corresponding to a given branch.
@@ -35731,7 +35731,7 @@ async function findOpenPullRequest(octokit, branch) {
         owner: github.context.repo.owner,
         repo: github.context.repo.repo,
         head: `${github.context.repo.owner}:${branch}`,
-        state: "open",
+        state: 'open',
     });
     if (pullRequests.length === 0) {
         core.warning(`No open PR found for branch '${branch}'.`);
@@ -35755,8 +35755,7 @@ async function findExistingBotComment(octokit, prNumber) {
         issue_number: prNumber,
     });
     // Use optional chaining to avoid errors if user/body are undefined
-    const botComment = comments.find((comment) => comment.user?.type === "Bot" &&
-        comment.body?.includes("<!-- GPT-BOT-COMMENT -->"));
+    const botComment = comments.find((comment) => comment.user?.type === 'Bot' && comment.body?.includes('<!-- GPT-BOT-COMMENT -->'));
     return botComment || null;
 }
 /**
@@ -35770,7 +35769,7 @@ async function findExistingBotComment(octokit, prNumber) {
 async function updateOrCreateBotComment(octokit, prNumber, botComment, feedback) {
     const commentBody = `<!-- GPT-BOT-COMMENT -->\n${feedback}`;
     if (botComment) {
-        core.info("Updating existing bot comment...");
+        core.info('Updating existing bot comment...');
         await octokit.rest.issues.updateComment({
             owner: github.context.repo.owner,
             repo: github.context.repo.repo,
@@ -35779,7 +35778,7 @@ async function updateOrCreateBotComment(octokit, prNumber, botComment, feedback)
         });
     }
     else {
-        core.info("Creating new bot comment...");
+        core.info('Creating new bot comment...');
         await octokit.rest.issues.createComment({
             owner: github.context.repo.owner,
             repo: github.context.repo.repo,
@@ -35794,26 +35793,26 @@ async function updateOrCreateBotComment(octokit, prNumber, botComment, feedback)
 async function main() {
     try {
         // Retrieve inputs
-        const githubToken = core.getInput("github_token", { required: true });
-        const openaiToken = core.getInput("openai_token", { required: true });
-        const openaiModel = core.getInput("openai_model") || "gpt-4o-mini";
-        const extraPrompt = core.getInput("extra_prompt");
+        const githubToken = core.getInput('github_token', { required: true });
+        const openaiToken = core.getInput('openai_token', { required: true });
+        const openaiModel = core.getInput('openai_model') || 'gpt-4o-mini';
+        const extraPrompt = core.getInput('extra_prompt');
         // Set up GitHub and OpenAI clients
         const octokit = github.getOctokit(githubToken);
         const openai = createOpenAIClient(openaiToken);
         // Determine the current branch
         const ref = github.context.ref; // e.g., "refs/heads/feature-branch"
-        if (!ref || !ref.startsWith("refs/heads/")) {
+        if (!ref || !ref.startsWith('refs/heads/')) {
             throw new Error(`GITHUB_REF is not a valid branch reference: ${ref}`);
         }
-        const branch = ref.replace("refs/heads/", "");
+        const branch = ref.replace('refs/heads/', '');
         // Fetch main branch and generate diff
         await fetchMainBranch();
         const diff = await generateDiff();
         // If no diff, output a message and exit
         if (!diff) {
-            core.setOutput("feedback", "No differences found.");
-            core.info("No differences found between main and current branch.");
+            core.setOutput('feedback', 'No differences found.');
+            core.info('No differences found between main and current branch.');
             return;
         }
         // Generate AI feedback (using the new chat.completions.create method)
@@ -35821,14 +35820,14 @@ async function main() {
         // Find the pull request
         const prNumber = await findOpenPullRequest(octokit, branch);
         if (!prNumber) {
-            core.warning("Cannot proceed without an open PR.");
+            core.warning('Cannot proceed without an open PR.');
             return;
         }
         // Check for existing bot comment
         const botComment = await findExistingBotComment(octokit, prNumber);
         // Create or update the bot comment with the AI feedback
         await updateOrCreateBotComment(octokit, prNumber, botComment, feedback);
-        core.info("Comment posted successfully.");
+        core.info('Comment posted successfully.');
     }
     catch (error) {
         // Updated error handling for OpenAI v4
