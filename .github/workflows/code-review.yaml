@@ -2,6 +2,27 @@ name: AI Code Review
 
 on:
   workflow_dispatch:
+    inputs:
+      model:
+        type: choice
+        description: "GPT Model"
+        default: gpt-4o-mini
+        options:
+          - gpt-4o-mini
+          - gpt-4o
+          - o1-mini
+          - o1-preview
+        required: true
+      extra_prompt:
+        type: string
+        description: "Extra Prompt"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   review_job:
@@ -10,4 +31,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: '0'
+          fetch-depth: "0"
+
+      - name: Run PR Reviewer Action
+        uses: remedyproduct/gpt-review-action@1bb26f2a6e09665181bb3d2a88b7cd3c58d03cb5
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          openai_token: ${{ secrets.OPENAI_TOKEN }}
+          openai_model: ${{ github.event.inputs.model }}
+          extra_prompt: ${{ github.event.inputs.extra_prompt }}
