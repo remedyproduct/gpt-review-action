@@ -1,6 +1,6 @@
-# AI Code Review Action
+# GPT Review Action
 
-This GitHub Action performs an AI-based review of a Pull Request. It then posts a comment in the PR summarizing any potential **logic** issues or concerns, ordered by severity.
+This GitHub Action performs a GPT-based review of a Pull Request. It then posts a comment in the PR summarizing any potential **logic** issues or concerns, ordered by severity.
 
 ## Overview
 
