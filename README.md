@@ -54,7 +54,7 @@ jobs:
           fetch-depth: "0"
 
       - name: Run PR Reviewer Action
-        uses: remedyproduct/gpt-review-action@1bb26f2a6e09665181bb3d2a88b7cd3c58d03cb5
+        uses: remedyproduct/gpt-review-action@v0.0.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           openai_token: ${{ secrets.OPENAI_TOKEN }}
