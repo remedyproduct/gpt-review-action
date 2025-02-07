@@ -1,4 +1,4 @@
-name: "PR Reviewer Action"
+name: "GPT PR Review Action"
 description: "A reusable action that reviews a PR (deduced from GITHUB_REF) and comments with its findings."
 
 inputs:
